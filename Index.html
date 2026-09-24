@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>7on7 Rotation Tracker</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --accent: #2563eb;
+      --accent-hover: #1d4ed8;
+      --success: #16a34a;
+      --danger: #dc2626;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --border: #334155;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background-color: var(--bg); color: var(--text); padding: 12px; padding-bottom: 70px; }
+    header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+    h1 { font-size: 1.25rem; font-weight: 700; }
+    .btn { background: var(--accent); color: #fff; border: none; padding: 8px 14px; border-radius: 6px; font-weight: 600; font-size: 0.85rem; cursor: pointer; }
+    .btn-success { background: var(--success); }
+    .btn-danger { background: var(--danger); }
+    .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    
+    /* Navigation / Tabs */
+    .tabs { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 16px; padding-bottom: 4px; }
+    .tab-btn { flex: 1; min-width: 75px; text-align: center; padding: 10px 4px; background: var(--card-bg); border: 1px solid var(--border); color: var(--text-muted); border-radius: 8px; font-size: 0.8rem; font-weight: bold; cursor: pointer; }
+    .tab-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+    .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 16px; }
+    .card h2 { font-size: 1rem; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
+
+    /* Roster slot grid */
+    .slot-row { display: grid; grid-template-columns: 70px 1fr; gap: 8px; align-items: center; margin-bottom: 8px; }
+    .slot-pos { background: #0b1120; border: 1px solid var(--border); padding: 8px; border-radius: 6px; text-align: center; font-weight: bold; font-size: 0.8rem; color: #38bdf8; }
+    select, input { width: 100%; background: #0b1120; border: 1px solid var(--border); color: var(--text); padding: 8px; border-radius: 6px; font-size: 0.9rem; outline: none; }
+
+    /* Action bar */
+    .action-bar { display: flex; gap: 8px; margin-top: 12px; }
+    .log-btn { flex: 2; padding: 12px; font-size: 1rem; }
+
+    /* Tables */
+    table { width: 100%; border-collapse: collapse; font-size: 0.8rem; text-align: left; }
+    th, td { padding: 8px 6px; border-bottom: 1px solid var(--border); }
+    th { color: var(--text-muted); }
+    .pill { display: inline-block; background: #0f172a; border: 1px solid var(--border); padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; margin: 2px 2px 2px 0; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>🏈 7v7 Tracker</h1>
+    <button class="btn btn-outline" onclick="resetStats()">Reset Game</button>
+  </header>
+
+  <!-- Unit Navigation Tabs -->
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchUnit('offense')">Offense</button>
+    <button class="tab-btn" onclick="switchUnit('defense')">Defense</button>
+    <button class="tab-btn" onclick="switchUnit('kickoff')">Kickoff</button>
+    <button class="tab-btn" onclick="switchUnit('kick_return')">Kick Ret</button>
+    <button class="tab-btn" onclick="switchUnit('roster')">Roster</button>
+  </div>
+
+  <!-- Unit View -->
+  <section id="unit-section" class="card">
+    <h2 id="unit-title">Offense Lineup</h2>
+    <div id="unit-slots"></div>
+    <div class="action-bar">
+      <button class="btn btn-success log-btn" onclick="recordRotation()">Log Rotation (+1)</button>
+    </div>
+  </section>
+
+  <!-- Roster Management View -->
+  <section id="roster-section" class="card" style="display: none;">
+    <h2>Add Player</h2>
+    <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+      <input type="text" id="new-player-name" placeholder="Name or # (e.g. #7 Smith)" />
+      <button class="btn" onclick="addPlayer()">Add</button>
+    </div>
+    <h2>Roster Members</h2>
+    <div id="roster-list"></div>
+  </section>
+
+  <!-- Stats & Rotations Summary -->
+  <section class="card">
+    <h2>Player Rotations Summary</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Player</th>
+          <th>Total</th>
+          <th>Positions Played</th>
+        </tr>
+      </thead>
+      <tbody id="stats-body"></tbody>
+    </table>
+  </section>
+
+  <script>
+    // Initial standard 7on7 unit schemas
+    const defaultPositions = {
+      offense: ["QB", "C/Snapper", "WR-X", "WR-Z", "Slot 1", "Slot 2", "RB"],
+      defense: ["CB 1", "CB 2", "Safety 1", "Safety 2", "LB/Rover 1", "LB/Rover 2", "Nickel"],
+      kickoff: ["Kicker", "Gunner L", "Gunner R", "Lane 1", "Lane 2", "Lane 3", "Safety"],
+      kick_return: ["Returner", "Lead Block", "Wall 1", "Wall 2", "Wall 3", "Wing L", "Wing R"]
+    };
+
+    // App state
+    let state = {
+      currentUnit: 'offense',
+      roster: ["#1 Marcus", "#7 Jaylen", "#10 Cam", "#11 Ty", "#15 Dev", "#22 Jax", "#24 Tre", "#88 Zach"],
+      lineups: {
+        offense: Array(7).fill(""),
+        defense: Array(7).fill(""),
+        kickoff: Array(7).fill(""),
+        kick_return: Array(7).fill("")
+      },
+      // Player stats: { "Marcus": { total: 0, positions: { "QB": 3, "CB 1": 1 } } }
+      stats: {}
+    };
+
+    // Load from LocalStorage
+    function init() {
+      const saved = localStorage.getItem('7v7_tracker_data');
+      if (saved) {
+        state = JSON.parse(saved);
+      } else {
+        ensureStatsInit();
+      }
+      render();
+    }
+
+    function save() {
+      localStorage.setItem('7v7_tracker_data', JSON.stringify(state));
+    }
+
+    function ensureStatsInit() {
+      state.roster.forEach(player => {
+        if (!state.stats[player]) {
+          state.stats[player] = { total: 0, positions: {} };
+        }
+      });
+    }
+
+    function switchUnit(unit) {
+      state.currentUnit = unit;
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.textContent.toLowerCase().includes(unit.replace('_', ' ').slice(0, 4)));
+      });
+
+      if (unit === 'roster') {
+        document.getElementById('unit-section').style.display = 'none';
+        document.getElementById('roster-section').style.display = 'block';
+      } else {
+        document.getElementById('unit-section').style.display = 'block';
+        document.getElementById('roster-section').style.display = 'none';
+        document.getElementById('unit-title').textContent = unit.replace('_', ' ').toUpperCase() + " LINEUP";
+      }
+      render();
+    }
+
+    function updateLineupSlot(slotIndex, playerName) {
+      state.lineups[state.currentUnit][slotIndex] = playerName;
+      save();
+    }
+
+    function recordRotation() {
+      const currentUnit = state.currentUnit;
+      const positions = defaultPositions[currentUnit];
+      const activeLineup = state.lineups[currentUnit];
+
+      let count = 0;
+      activeLineup.forEach((player, idx) => {
+        if (player) {
+          const pos = positions[idx];
+          if (!state.stats[player]) state.stats[player] = { total: 0, positions: {} };
+          state.stats[player].total += 1;
+          state.stats[player].positions[pos] = (state.stats[player].positions[pos] || 0) + 1;
+          count++;
+        }
+      });
+
+      if (count === 0) {
+        alert("Please assign at least one player to this lineup first.");
+        return;
+      }
+
+      save();
+      render();
+    }
+
+    function addPlayer() {
+      const input = document.getElementById('new-player-name');
+      const name = input.value.trim();
+      if (!name) return;
+      if (!state.roster.includes(name)) {
+        state.roster.push(name);
+        state.stats[name] = { total: 0, positions: {} };
+        save();
+        render();
+      }
+      input.value = '';
+    }
+
+    function removePlayer(name) {
+      if (!confirm(`Delete ${name}?`)) return;
+      state.roster = state.roster.filter(p => p !== name);
+      delete state.stats[name];
+      for (let unit in state.lineups) {
+        state.lineups[unit] = state.lineups[unit].map(p => p === name ? "" : p);
+      }
+      save();
+      render();
+    }
+
+    function resetStats() {
+      if (confirm("Reset rotation stats for all players? Lineups and roster will remain.")) {
+        state.roster.forEach(player => {
+          state.stats[player] = { total: 0, positions: {} };
+        });
+        save();
+        render();
+      }
+    }
+
+    function render() {
+      ensureStatsInit();
+
+      // Render Lineup Slots
+      if (state.currentUnit !== 'roster') {
+        const slotsDiv = document.getElementById('unit-slots');
+        slotsDiv.innerHTML = '';
+        const positions = defaultPositions[state.currentUnit];
+        const lineup = state.lineups[state.currentUnit];
+
+        positions.forEach((posName, idx) => {
+          const row = document.createElement('div');
+          row.className = 'slot-row';
+
+          const label = document.createElement('div');
+          label.className = 'slot-pos';
+          label.textContent = posName;
+
+          const select = document.createElement('select');
+          select.innerHTML = '<option value="">-- Empty --</option>' + 
+            state.roster.map(p => `<option value="${p}" ${lineup[idx] === p ? 'selected' : ''}>${p}</option>`).join('');
+
+          select.onchange = (e) => updateLineupSlot(idx, e.target.value);
+
+          row.appendChild(label);
+          row.appendChild(select);
+          slotsDiv.appendChild(row);
+        });
+      }
+
+      // Render Roster List
+      const rosterList = document.getElementById('roster-list');
+      rosterList.innerHTML = state.roster.map(p => `
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--border)">
+          <span>${p}</span>
+          <button class="btn btn-danger" style="padding:4px 8px; font-size:0.75rem;" onclick="removePlayer('${p}')">✕</button>
+        </div>
+      `).join('');
+
+      // Render Stats Table
+      const statsBody = document.getElementById('stats-body');
+      statsBody.innerHTML = '';
+
+      // Sort by total rotations descending
+      const sortedPlayers = [...state.roster].sort((a, b) => {
+        const tA = state.stats[a] ? state.stats[a].total : 0;
+        const tB = state.stats[b] ? state.stats[b].total : 0;
+        return tB - tA;
+      });
+
+      sortedPlayers.forEach(player => {
+        const pStats = state.stats[player] || { total: 0, positions: {} };
+        const posTags = Object.entries(pStats.positions)
+          .map(([pos, count]) => `<span class="pill">${pos}: <b>${count}</b></span>`)
+          .join('') || '<span style="color:var(--text-muted)">None</span>';
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><strong>${player}</strong></td>
+          <td><b>${pStats.total}</b></td>
+          <td>${posTags}</td>
+        `;
+        statsBody.appendChild(tr);
+      });
+    }
+
+    init();
+  </script>
+</body>
+</html>
